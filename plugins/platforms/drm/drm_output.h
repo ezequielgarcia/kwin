@@ -51,7 +51,6 @@ public:
     ///queues deleting the output after a page flip has completed.
     void teardown();
     void releaseGbm();
-    bool showCursor(DrmDumbBuffer *buffer);
     bool showCursor();
     bool hideCursor();
     void updateCursor();
@@ -96,6 +95,7 @@ private:
         Real
     };
     bool doAtomicCommit(AtomicCommitMode mode);
+    bool atomicCursorCommit(DrmDumbBuffer *buffer);
 
     bool presentLegacy(DrmBuffer *buffer);
     bool setModeLegacy(DrmBuffer *buffer);
@@ -107,6 +107,9 @@ private:
     void initUuid();
     bool initPrimaryPlane();
     bool initCursorPlane();
+    bool hideCursorLegacy();
+    bool showCursorLegacy(DrmDumbBuffer *c);
+    bool showCursor(DrmDumbBuffer *buffer);
 
     void atomicEnable();
     void atomicDisable();
@@ -158,6 +161,8 @@ private:
     } m_lastWorkingState;
     DrmDumbBuffer *m_cursor[2] = {nullptr, nullptr};
     int m_cursorIndex = 0;
+    int m_cursorX = 0;
+    int m_cursorY = 0;
     bool m_hasNewCursor = false;
     bool m_deleted = false;
 };

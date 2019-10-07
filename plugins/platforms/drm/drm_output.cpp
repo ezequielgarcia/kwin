@@ -102,15 +102,29 @@ void DrmOutput::releaseGbm()
     }
 }
 
-bool DrmOutput::hideCursor()
+bool DrmOutput::hideCursorLegacy()
 {
     return drmModeSetCursor(m_backend->fd(), m_crtc->id(), 0, 0, 0) == 0;
 }
 
-bool DrmOutput::showCursor(DrmDumbBuffer *c)
+bool DrmOutput::hideCursor()
+{
+    if (!m_cursorPlane)
+        return hideCursorLegacy();
+    return atomicCursorCommit(nullptr);
+}
+
+bool DrmOutput::showCursorLegacy(DrmDumbBuffer *c)
 {
     const QSize &s = c->size();
     return drmModeSetCursor(m_backend->fd(), m_crtc->id(), c->handle(), s.width(), s.height()) == 0;
+}
+
+bool DrmOutput::showCursor(DrmDumbBuffer *c)
+{
+    if (!m_cursorPlane)
+        return showCursorLegacy(c);
+    return atomicCursorCommit(c);
 }
 
 bool DrmOutput::showCursor()
@@ -198,7 +212,15 @@ void DrmOutput::moveCursor(const QPoint &globalPos)
     }
     p *= scale();
     p -= hotspotMatrix.map(m_backend->softwareCursorHotspot());
-    drmModeMoveCursor(m_backend->fd(), m_crtc->id(), p.x(), p.y());
+
+    if (!m_cursorPlane) {
+        drmModeMoveCursor(m_backend->fd(), m_crtc->id(), p.x(), p.y());
+        return;
+    }
+
+    m_cursorX = p.x();
+    m_cursorY = p.y();
+    atomicCursorCommit(m_cursor[m_cursorIndex]);
 }
 
 static QHash<int, QByteArray> s_connectorNames = {
@@ -252,6 +274,7 @@ bool DrmOutput::init(drmModeConnector *connector)
         if (!initPrimaryPlane()) {
             return false;
         }
+        initCursorPlane();
     } else if (!m_crtc->blank()) {
         return false;
     }
@@ -1025,6 +1048,51 @@ bool DrmOutput::doAtomicCommit(AtomicCommitMode mode)
     }
 
     drmModeAtomicFree(req);
+    return true;
+}
+
+bool DrmOutput::atomicCursorCommit(DrmDumbBuffer *c)
+{
+    drmModeAtomicReq *req = drmModeAtomicAlloc();
+    int x, y, w, h, crtc_id, fb_id;
+
+    if (c) {
+        const QSize &s = c->size();
+
+        w = s.width();
+        h = s.height();
+        x = m_cursorX;
+        y = m_cursorY;
+        crtc_id = m_crtc->id();
+        fb_id = c->bufferId();
+    } else {
+        w = h = 0;
+        x = y = 0;
+        crtc_id = 0;
+        fb_id = 0;
+    }
+
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::SrcX), 0);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::SrcY), 0);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::SrcW), w << 16);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::SrcH), h << 16);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::CrtcX), x);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::CrtcY), y);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::CrtcW), w);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::CrtcH), h);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::CrtcId), crtc_id);
+    m_cursorPlane->setValue(int(DrmPlane::PropertyIndex::FbId), fb_id);
+
+    bool ret = m_cursorPlane->atomicPopulate(req);
+    if (!ret) {
+        qCWarning(KWIN_DRM) << "Failed to populate cursor atomic planes. Abort atomic commit!";
+        return false;
+    }
+
+    if (drmModeAtomicCommit(m_backend->fd(), req, 0, this)) {
+        qCWarning(KWIN_DRM) << "Atomic request failed to commit cursor:" << strerror(errno);
+        return false;
+    }
     return true;
 }
 
