@@ -54,7 +54,7 @@ DrmDumbBuffer::DrmDumbBuffer(int fd, const QSize &size)
     m_handle = createArgs.handle;
     m_bufferSize = createArgs.size;
     m_stride = createArgs.pitch;
-    if (drmModeAddFB(fd, size.width(), size.height(), 24, 32,
+    if (drmModeAddFB(fd, size.width(), size.height(), 32, 32,
                      m_stride, createArgs.handle, &m_bufferId) != 0) {
         qCWarning(KWIN_DRM) << "drmModeAddFB failed with errno" << errno;
     }
