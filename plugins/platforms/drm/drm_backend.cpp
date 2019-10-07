@@ -348,6 +348,7 @@ void DrmBackend::openDrm()
 
     initCursor();
     updateOutputs();
+    connectCursor();
 
     if (m_outputs.isEmpty()) {
         qCWarning(KWIN_DRM) << "No outputs, cannot render, will terminate now";
@@ -605,17 +606,8 @@ bool DrmBackend::present(DrmBuffer *buffer, DrmOutput *output)
     return false;
 }
 
-void DrmBackend::initCursor()
+void DrmBackend::connectCursor()
 {
-
-#if HAVE_EGL_STREAMS
-    // Hardware cursors aren't currently supported with EGLStream backend,
-    // possibly an NVIDIA driver bug
-    if (m_useEglStreams) {
-        setSoftWareCursor(true);
-    }
-#endif
-
     m_cursorEnabled = waylandServer()->seat()->hasPointer();
     connect(waylandServer()->seat(), &KWayland::Server::SeatInterface::hasPointerChanged, this,
         [this] {
@@ -634,6 +626,23 @@ void DrmBackend::initCursor()
             }
         }
     );
+
+    // now we have screens and can set cursors, so start tracking
+    connect(this, &DrmBackend::cursorChanged, this, &DrmBackend::updateCursor);
+    connect(Cursor::self(), &Cursor::posChanged, this, &DrmBackend::moveCursor);
+}
+
+void DrmBackend::initCursor()
+{
+
+#if HAVE_EGL_STREAMS
+    // Hardware cursors aren't currently supported with EGLStream backend,
+    // possibly an NVIDIA driver bug
+    if (m_useEglStreams) {
+        setSoftWareCursor(true);
+    }
+#endif
+
     uint64_t capability = 0;
     QSize cursorSize;
     if (drmGetCap(m_fd, DRM_CAP_CURSOR_WIDTH, &capability) == 0) {
@@ -647,9 +656,6 @@ void DrmBackend::initCursor()
         cursorSize.setHeight(64);
     }
     m_cursorSize = cursorSize;
-    // now we have screens and can set cursors, so start tracking
-    connect(this, &DrmBackend::cursorChanged, this, &DrmBackend::updateCursor);
-    connect(Cursor::self(), &Cursor::posChanged, this, &DrmBackend::moveCursor);
 }
 
 void DrmBackend::setCursor()

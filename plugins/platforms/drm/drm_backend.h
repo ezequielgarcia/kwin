@@ -160,6 +160,7 @@ private:
     void updateCursor();
     void moveCursor();
     void initCursor();
+    void connectCursor();
     void readOutputsConfiguration();
     void writeOutputsConfiguration();
     QByteArray generateOutputConfigurationUuid() const;
